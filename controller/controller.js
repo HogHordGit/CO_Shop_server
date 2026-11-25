@@ -68,10 +68,10 @@ router.post("/api/v1/admins", (req, res) => {
 
         const user = result.rows[0];
 
-        const token = jwt.sign(
-            { id: user.id, login: user.login }, // payload
-            "u92Dj#4r@9dkLS!92mdkqPz6vG!ks1Nd"
-        );
+        // const token = jwt.sign(
+        //     { id: user.id, login: user.login }, // payload
+        //     "u92Dj#4r@9dkLS!92mdkqPz6vG!ks1Nd"
+        // );
 
         return res.status(201).json(result.rows);
     })
@@ -95,6 +95,45 @@ router.post("/api/v1/login", (req, res) => {
         }
 
         // Отримуємо користувача
+        const admin = result.rows[0];
+
+        // Генеруємо токен
+        const token = jwt.sign(
+            { id: admin.id, login: admin.login },
+            "u92Dj#4r@9dkLS!92mdkqPz6vG!ks1Nd",
+            { expiresIn: "1h" } // токен діє 1 годину
+        );
+
+        // Повертаємо дані
+        return res.status(200).json({
+            message: "Authentication successful",
+            admin: {
+                id: admin.id,
+                login: admin.login,
+                token: token
+            }
+        });
+    });
+});
+
+router.post("/api/v1/user-login", (req, res) => {
+    const { login, password } = req.body;
+
+    if (!login || !password) {
+        return res.status(400).json({ message: "Login and password are required" });
+    }
+
+    const sql = "SELECT * FROM acc.users WHERE login = $1 AND password = $2";
+
+    db.query(sql, [login, password], (err, result) => {
+        if (err) return res.status(500).json({ message: "Database error", error: err });
+
+        // Якщо користувача не знайдено
+        if (result.rows.length === 0) {
+            return res.status(401).json({ message: "Invalid login or password" });
+        }
+
+        // Отримуємо користувача
         const user = result.rows[0];
 
         // Генеруємо токен
@@ -107,7 +146,7 @@ router.post("/api/v1/login", (req, res) => {
         // Повертаємо дані
         return res.status(200).json({
             message: "Authentication successful",
-            admin: {
+            user: {
                 id: user.id,
                 login: user.login,
                 token: token
@@ -118,11 +157,37 @@ router.post("/api/v1/login", (req, res) => {
 
 router.post("/api/v1/users", (req, res) => {
     const {login, password, name, balance} = req.body;
-    const sql = "insert into acc.users(login, password, name, balance) VALUES ($1,$2, $3, $4) RETURNING *";
+    const sql = "insert into acc.users(login, password, name, balance) VALUES ($1,$2,$3,$4) RETURNING *";
 
     db.query(sql, [login, password, name, balance], (err, result) => {
         if (err) throw res.json(err);
         return res.status(201).json(result.rows);
+    })
+});
+
+router.post("/api/v1/registration", (req, res) => {
+    const {login, password, name, balance} = req.body;
+    const sql = "insert into acc.users(login, password, name, balance) VALUES ($1,$2,$3,$4) RETURNING *";
+
+    db.query(sql, [login, password, name, balance], (err, result) => {
+        if (err) throw res.json(err);
+
+        const user = result.rows[0];
+
+        const token = jwt.sign(
+            { id: user.id, login: user.login },
+            "u92Dj#4r@9dkLS!92mdkqPz6vG!ks1Nd",
+            { expiresIn: "1h" } // токен діє 1 годину
+        );
+
+        return res.status(201).json({
+            message: "Authentication successful",
+            user: {
+                id: user.id,
+                login: user.login,
+                token: token
+            }
+        });
     })
 });
 
@@ -150,10 +215,10 @@ router.put("/api/v1/admins/:id", (req, res) => {
 
 router.put("/api/v1/users/:id", (req, res) => {
     const accId = Number(req.params.id);
-    const {login, password, name, balance} = req.body;
-    const sql = "update acc.users SET login=$1,password=$2,name=$3,balance=$4 Where id=$5";
+    const {login, password, name, balance, token} = req.body;
+    const sql = "update acc.users SET login=$1,password=$2,name=$3,balance=$4,token=$5 Where id=$6";
 
-    db.query(sql, [login, password, name, balance, accId], (err, result) => {
+    db.query(sql, [login, password, name, balance, token, accId], (err, result) => {
         if (err) throw res.json(err);
         return res.status(200).json(`Item is updated successfully for id: ${accId}`);
     })
@@ -171,16 +236,6 @@ router.put("/api/v1/clothes/:id", (req, res) => {
 });
 
 //Delete method
-router.delete("/api/v1/accounts/:id", (req, res) => {
-    const id = Number(req.params.id);
-    const sql = "DELETE from acc.account where id=$1";
-
-    db.query(sql, [id], (err, result) => {
-        if (err) throw res.json(err);
-        return res.status(200).json(`Item is deleted successfully for id: ${id}`);
-    })
-});
-
 router.delete("/api/v1/admins/:id", (req, res) => {
     const id = Number(req.params.id);
     const sql = "DELETE from acc.admins where id=$1";
