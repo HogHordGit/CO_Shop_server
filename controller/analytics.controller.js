@@ -6,7 +6,10 @@ const db = require("../DB/db");
 const allowedEvents = [
     "session_start",
     "page_view",
-    "product_view"
+    "product_view",
+    "heartbeat",
+    "page_duration",
+    "product_duration"
 ];
 
 // Проверка формата UUID
@@ -74,7 +77,10 @@ router.post("/api/v1/analytics/event", async (req, res) => {
     }
 
     if (
-        event_type === "product_view" &&
+        (
+            event_type === "product_view" ||
+            event_type === "product_duration"
+        ) &&
         product_id === null
     ) {
         return res.status(400).json({
@@ -111,6 +117,23 @@ router.post("/api/v1/analytics/event", async (req, res) => {
     }
 
     let client;
+
+    // Проверка продолжительности просмотра
+    if (
+        event_type === "page_duration" ||
+        event_type === "product_duration"
+    ) {
+        const duration = event_data.duration_ms;
+
+        if (
+            !Number.isSafeInteger(duration) ||
+            duration <= 0
+        ) {
+            return res.status(400).json({
+                message: "Invalid duration_ms"
+            });
+        }
+    }
 
     try {
         client = await db.connect();
@@ -168,6 +191,17 @@ router.post("/api/v1/analytics/event", async (req, res) => {
 
             return res.status(409).json({
                 message: "Session visitor mismatch"
+            });
+        }
+
+        // Обработка сигнала присутствия пользователя
+        if (event_type === "heartbeat") {
+
+            await client.query("COMMIT");
+
+            return res.status(200).json({
+                message: "Heartbeat successfully registered",
+                event_id: event_id
             });
         }
 
@@ -240,6 +274,40 @@ router.post("/api/v1/analytics/event", async (req, res) => {
         if (client) {
             client.release();
         }
+    }
+});
+
+// Получение количества активных посетителей
+router.get("/api/v1/analytics/online", async (req, res) => {
+
+    try {
+
+        const result = await db.query(`
+            SELECT
+                COUNT(DISTINCT visitor_id)::INTEGER
+                    AS online_visitors
+            FROM analytics.sessions
+            WHERE last_activity >=
+                NOW() - INTERVAL '90 seconds'
+        `);
+
+        return res.status(200).json({
+            online_visitors:
+            result.rows[0].online_visitors
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Online visitors error:",
+            error
+        );
+
+        return res.status(500).json({
+            message: "Analytics database error",
+            details: error.message,
+            code: error.code
+        });
     }
 });
 
